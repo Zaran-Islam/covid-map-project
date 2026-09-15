@@ -1,0 +1,1871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Brush, Map, Bars</title>
+
+    <!-- D3 -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+
+    <!-- TopoJSON -->
+    <script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+
+    <style>
+
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            background-color: #f5f5f5;
+        }
+
+        h1 {
+            text-align: center;
+            margin: 20px;
+        }
+
+        .main-container {
+            display: flex;
+            width: 95%;
+            margin: auto;
+            gap: 20px;
+        }
+
+        .left-side {
+            width: 55%;
+        }
+
+        .right-side {
+            width: 45%;
+        }
+
+        .box {
+            background-color: white;
+            border: 1px solid #ccc;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+
+        #mapDiv {
+            width: 100%;
+            height: 600px;
+            position: relative;
+        }
+
+        #barDiv,
+        #barTwoDiv {
+            width: 100%;
+            height: 300px;
+        }
+
+        #brushDiv {
+            width: 95%;
+            height: 180px;
+            margin: 20px auto;
+        }
+
+        svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .state {
+            stroke: white;
+            stroke-width: 0.7px;
+            cursor: pointer;
+        }
+
+        .state:hover {
+            stroke: black;
+            stroke-width: 2px;
+        }
+
+        .selected {
+            stroke: black;
+            stroke-width: 3px;
+        }
+
+        .bar {
+            cursor: pointer;
+        }
+
+        .bar:hover {
+            opacity: 0.7;
+        }
+
+        .axis text {
+            font-size: 11px;
+        }
+
+        .tooltip {
+            position: absolute;
+            background-color: white;
+            border: 1px solid #777;
+            padding: 10px;
+            border-radius: 5px;
+            pointer-events: none;
+            font-size: 13px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            display: none;
+            z-index: 10;
+        }
+
+        .brush .selection {
+            fill: #999;
+            fill-opacity: 0.3;
+            stroke: black;
+        }
+
+        button {
+            padding: 8px 14px;
+            margin: 5px;
+            cursor: pointer;
+            border: 1px solid #888;
+            background-color: white;
+            border-radius: 4px;
+        }
+
+        button:hover {
+            background-color: #eee;
+        }
+
+        #tableDiv {
+            margin-top: 15px;
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: white;
+        }
+
+        th,
+        td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #eee;
+        }
+
+        .info {
+            margin-bottom: 10px;
+        }
+
+    </style>
+</head>
+
+<body>
+
+    <h1>Brush, Map, Bars</h1>
+
+    <div class="main-container">
+
+        <!-- LEFT SIDE -->
+        <div class="left-side">
+
+            <div class="box">
+
+                <div id="mapDiv"></div>
+
+                <div id="tableDiv" style="display: none;"></div>
+
+            </div>
+
+        </div>
+
+        <!-- RIGHT SIDE -->
+        <div class="right-side">
+
+            <div class="box">
+
+                <div class="info">
+                    <strong>COVID-19 U.S. Data Visualization</strong>
+                </div>
+
+                <div>
+                    <button id="tableButton">
+                        Switch to Table
+                    </button>
+
+                    <button id="resetButton">
+                        Reset
+                    </button>
+                </div>
+
+            </div>
+
+            <div class="box">
+
+                <h3>Top 10 States by Cases</h3>
+
+                <div id="barDiv"></div>
+
+            </div>
+
+            <div class="box">
+
+                <h3>Top 10 States by Deaths</h3>
+
+                <div id="barTwoDiv"></div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- TIMELINE -->
+    <div class="box" style="width: 92%; margin: 20px auto;">
+
+        <h3>COVID-19 Timeline</h3>
+
+        <div id="brushDiv"></div>
+
+    </div>
+
+    <!-- TOOLTIP -->
+    <div id="tooltip" class="tooltip"></div>
+
+
+    <script>
+
+        /*
+        ============================================================
+        GLOBAL VARIABLES
+        ============================================================
+        */
+
+        let covidData = [];
+        let censusData = [];
+        let mapData = null;
+
+        let currentData = [];
+
+        let selectedState = null;
+
+        let startDate = null;
+        let endDate = null;
+
+
+        /*
+        ============================================================
+        STATE NAME / ABBREVIATION CONVERTER
+        ============================================================
+        */
+
+        const stateNames = {
+
+            "AL": "Alabama",
+            "AK": "Alaska",
+            "AZ": "Arizona",
+            "AR": "Arkansas",
+            "CA": "California",
+            "CO": "Colorado",
+            "CT": "Connecticut",
+            "DE": "Delaware",
+            "FL": "Florida",
+            "GA": "Georgia",
+            "HI": "Hawaii",
+            "ID": "Idaho",
+            "IL": "Illinois",
+            "IN": "Indiana",
+            "IA": "Iowa",
+            "KS": "Kansas",
+            "KY": "Kentucky",
+            "LA": "Louisiana",
+            "ME": "Maine",
+            "MD": "Maryland",
+            "MA": "Massachusetts",
+            "MI": "Michigan",
+            "MN": "Minnesota",
+            "MS": "Mississippi",
+            "MO": "Missouri",
+            "MT": "Montana",
+            "NE": "Nebraska",
+            "NV": "Nevada",
+            "NH": "New Hampshire",
+            "NJ": "New Jersey",
+            "NM": "New Mexico",
+            "NY": "New York",
+            "NC": "North Carolina",
+            "ND": "North Dakota",
+            "OH": "Ohio",
+            "OK": "Oklahoma",
+            "OR": "Oregon",
+            "PA": "Pennsylvania",
+            "RI": "Rhode Island",
+            "SC": "South Carolina",
+            "SD": "South Dakota",
+            "TN": "Tennessee",
+            "TX": "Texas",
+            "UT": "Utah",
+            "VT": "Vermont",
+            "VA": "Virginia",
+            "WA": "Washington",
+            "WV": "West Virginia",
+            "WI": "Wisconsin",
+            "WY": "Wyoming",
+            "DC": "District of Columbia"
+        };
+
+
+        const nameToAbbreviation = {};
+
+        for (let abbreviation in stateNames) {
+
+            nameToAbbreviation[stateNames[abbreviation]] = abbreviation;
+
+        }
+
+
+        /*
+        ============================================================
+        FIPS CODE TO STATE ABBREVIATION
+        ============================================================
+        */
+
+        const fipsToAbbreviation = {
+
+            "01": "AL",
+            "02": "AK",
+            "04": "AZ",
+            "05": "AR",
+            "06": "CA",
+            "08": "CO",
+            "09": "CT",
+            "10": "DE",
+            "12": "FL",
+            "13": "GA",
+            "15": "HI",
+            "16": "ID",
+            "17": "IL",
+            "18": "IN",
+            "19": "IA",
+            "20": "KS",
+            "21": "KY",
+            "22": "LA",
+            "23": "ME",
+            "24": "MD",
+            "25": "MA",
+            "26": "MI",
+            "27": "MN",
+            "28": "MS",
+            "29": "MO",
+            "30": "MT",
+            "31": "NE",
+            "32": "NV",
+            "33": "NH",
+            "34": "NJ",
+            "35": "NM",
+            "36": "NY",
+            "37": "NC",
+            "38": "ND",
+            "39": "OH",
+            "40": "OK",
+            "41": "OR",
+            "42": "PA",
+            "44": "RI",
+            "45": "SC",
+            "46": "SD",
+            "47": "TN",
+            "48": "TX",
+            "49": "UT",
+            "50": "VT",
+            "51": "VA",
+            "53": "WA",
+            "54": "WV",
+            "55": "WI",
+            "56": "WY"
+        };
+
+
+        /*
+        ============================================================
+        LOAD DATA
+        ============================================================
+        */
+
+        Promise.all([
+
+            d3.csv("data/covid_data_20.csv"),
+
+            d3.csv("data/census_usa.csv"),
+
+            d3.json(
+                "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json"
+            )
+
+        ])
+
+        .then(function(data) {
+
+            covidData = data[0];
+
+            censusData = data[1];
+
+            mapData = data[2];
+
+
+            console.log("COVID data:", covidData);
+
+            console.log("Census data:", censusData);
+
+            console.log("Map data:", mapData);
+
+
+            /*
+            Convert COVID values into numbers
+            */
+
+            covidData.forEach(function(d) {
+
+                d.new_case = +d.new_case;
+
+                d.new_death = +d.new_death;
+
+                d.submission_date =
+                    d3.timeParse("%m/%d/%Y")(d.submission_date);
+
+            });
+
+
+            /*
+            Convert census population into numbers
+            */
+
+            censusData.forEach(function(d) {
+
+                d["2020"] = +d["2020"];
+
+            });
+
+
+            /*
+            Start with all COVID data
+            */
+
+            currentData = covidData;
+
+
+            /*
+            Create the visualizations
+            */
+
+            createMap();
+
+            createBars();
+
+            createTimeline();
+
+            createTable();
+
+
+            /*
+            Set the initial date range
+            */
+
+            const dates = covidData
+                .map(function(d) {
+                    return d.submission_date;
+                })
+                .filter(function(d) {
+                    return d !== null;
+                });
+
+
+            startDate = d3.min(dates);
+
+            endDate = d3.max(dates);
+
+
+            updateAll();
+
+        })
+
+        .catch(function(error) {
+
+            console.error(
+                "There was an error loading or creating the visualization:",
+                error
+            );
+
+        });
+
+
+        /*
+        ============================================================
+        CREATE MAP
+        ============================================================
+        */
+
+        function createMap() {
+
+            const mapDiv =
+                document.getElementById("mapDiv");
+
+
+            const width =
+                mapDiv.clientWidth;
+
+
+            const height =
+                mapDiv.clientHeight;
+
+
+            /*
+            Convert TopoJSON into GeoJSON
+            */
+
+            const statesGeo =
+                topojson.feature(
+                    mapData,
+                    mapData.objects.states
+                );
+
+
+            /*
+            Create Albers USA projection
+            */
+
+            const projection =
+                d3.geoAlbersUsa()
+                    .fitSize(
+                        [width, height],
+                        statesGeo
+                    );
+
+
+            /*
+            Create path generator
+            */
+
+            const path =
+                d3.geoPath()
+                    .projection(projection);
+
+
+            /*
+            Create SVG
+            */
+
+            const svg =
+                d3.select("#mapDiv")
+                    .append("svg")
+                    .attr("width", width)
+                    .attr("height", height);
+
+
+            /*
+            Create group
+            */
+
+            const g =
+                svg.append("g");
+
+
+            /*
+            Create tooltip
+            */
+
+            const tooltip =
+                d3.select("#tooltip");
+
+
+            /*
+            Create state paths
+            */
+
+            g.selectAll(".state")
+
+                .data(statesGeo.features)
+
+                .join("path")
+
+                .attr("class", "state")
+
+                .attr("d", path)
+
+                .attr("fill", "#ddd")
+
+                .on("mouseover", function(event, d) {
+
+                    const abbreviation =
+                        fipsToAbbreviation[
+                            String(d.id).padStart(2, "0")
+                        ];
+
+
+                    showStateTooltip(
+                        event,
+                        abbreviation,
+                        tooltip
+                    );
+
+                })
+
+                .on("mousemove", function(event) {
+
+                    tooltip
+
+                        .style(
+                            "left",
+                            (event.pageX + 10) + "px"
+                        )
+
+                        .style(
+                            "top",
+                            (event.pageY + 10) + "px"
+                        );
+
+                })
+
+                .on("mouseout", function() {
+
+                    tooltip.style(
+                        "display",
+                        "none"
+                    );
+
+                })
+
+                .on("click", function(event, d) {
+
+                    const abbreviation =
+                        fipsToAbbreviation[
+                            String(d.id).padStart(2, "0")
+                        ];
+
+
+                    selectedState =
+                        abbreviation;
+
+
+                    updateAll();
+
+                });
+
+        }
+
+
+        /*
+        ============================================================
+        SHOW STATE TOOLTIP
+        ============================================================
+        */
+
+        function showStateTooltip(
+            event,
+            abbreviation,
+            tooltip
+        ) {
+
+            if (!abbreviation) {
+
+                return;
+
+            }
+
+
+            const stateData =
+                aggregateData(currentData);
+
+
+            const state =
+                stateData.find(function(d) {
+
+                    return d.state === abbreviation;
+
+                });
+
+
+            if (!state) {
+
+                tooltip
+                    .style("display", "block")
+                    .html(
+                        "<strong>" +
+                        stateNames[abbreviation] +
+                        "</strong><br>" +
+                        "No data"
+                    );
+
+                return;
+
+            }
+
+
+            const population =
+                getPopulation(abbreviation);
+
+
+            const totalCases =
+                d3.sum(
+                    stateData,
+                    function(d) {
+                        return d.cases;
+                    }
+                );
+
+
+            const totalDeaths =
+                d3.sum(
+                    stateData,
+                    function(d) {
+                        return d.deaths;
+                    }
+                );
+
+
+            const casesPercent =
+                totalCases > 0
+                    ? (state.cases / totalCases * 100)
+                    : 0;
+
+
+            const deathsPercent =
+                totalDeaths > 0
+                    ? (state.deaths / totalDeaths * 100)
+                    : 0;
+
+
+            tooltip
+
+                .style("display", "block")
+
+                .style(
+                    "left",
+                    (event.pageX + 10) + "px"
+                )
+
+                .style(
+                    "top",
+                    (event.pageY + 10) + "px"
+                )
+
+                .html(
+
+                    "<strong>" +
+                    stateNames[abbreviation] +
+                    "</strong><br><br>" +
+
+                    "Population: " +
+                    d3.format(",")(population) +
+                    "<br>" +
+
+                    "Cases: " +
+                    d3.format(",")(state.cases) +
+                    "<br>" +
+
+                    "Deaths: " +
+                    d3.format(",")(state.deaths) +
+                    "<br>" +
+
+                    "Cases %: " +
+                    casesPercent.toFixed(2) +
+                    "%<br>" +
+
+                    "Deaths %: " +
+                    deathsPercent.toFixed(2) +
+                    "%"
+
+                );
+
+        }
+
+
+        /*
+        ============================================================
+        GET POPULATION
+        ============================================================
+        */
+
+        function getPopulation(abbreviation) {
+
+            const stateName =
+                stateNames[abbreviation];
+
+
+            const row =
+                censusData.find(function(d) {
+
+                    return (
+                        d.state === stateName ||
+                        d.State === stateName
+                    );
+
+                });
+
+
+            if (!row) {
+
+                return 0;
+
+            }
+
+
+            return +(
+                row["2020"] ||
+                row.population ||
+                0
+            );
+
+        }
+
+
+        /*
+        ============================================================
+        AGGREGATE COVID DATA
+        ============================================================
+        */
+
+        function aggregateData(data) {
+
+            const grouped =
+                d3.rollup(
+
+                    data,
+
+                    function(values) {
+
+                        return {
+
+                            cases: d3.sum(
+                                values,
+                                function(d) {
+                                    return d.new_case;
+                                }
+                            ),
+
+                            deaths: d3.sum(
+                                values,
+                                function(d) {
+                                    return d.new_death;
+                                }
+                            )
+
+                        };
+
+                    },
+
+                    function(d) {
+                        return d.state;
+                    }
+
+                );
+
+
+            return Array.from(
+                grouped,
+                function(entry) {
+
+                    return {
+
+                        state: entry[0],
+
+                        cases: entry[1].cases,
+
+                        deaths: entry[1].deaths
+
+                    };
+
+                }
+            );
+
+        }
+
+
+        /*
+        ============================================================
+        CREATE BAR CHARTS
+        ============================================================
+        */
+
+        function createBars() {
+
+            createCaseBarChart();
+
+            createDeathBarChart();
+
+        }
+
+
+        /*
+        ============================================================
+        CASE BAR CHART
+        ============================================================
+        */
+
+        function createCaseBarChart() {
+
+            const div =
+                document.getElementById("barDiv");
+
+
+            const width =
+                div.clientWidth;
+
+
+            const height =
+                div.clientHeight;
+
+
+            const margin = {
+
+                top: 10,
+
+                right: 20,
+
+                bottom: 50,
+
+                left: 100
+
+            };
+
+
+            const svg =
+                d3.select("#barDiv")
+                    .append("svg")
+                    .attr("width", width)
+                    .attr("height", height);
+
+
+            svg.append("g")
+                .attr("class", "bars");
+
+
+            svg.append("g")
+                .attr("class", "x-axis");
+
+
+            svg.append("g")
+                .attr("class", "y-axis");
+
+        }
+
+
+        /*
+        ============================================================
+        DEATH BAR CHART
+        ============================================================
+        */
+
+        function createDeathBarChart() {
+
+            const div =
+                document.getElementById("barTwoDiv");
+
+
+            const width =
+                div.clientWidth;
+
+
+            const height =
+                div.clientHeight;
+
+
+            const svg =
+                d3.select("#barTwoDiv")
+                    .append("svg")
+                    .attr("width", width)
+                    .attr("height", height);
+
+
+            svg.append("g")
+                .attr("class", "bars");
+
+
+            svg.append("g")
+                .attr("class", "x-axis");
+
+
+            svg.append("g")
+                .attr("class", "y-axis");
+
+        }
+
+
+        /*
+        ============================================================
+        UPDATE BAR CHARTS
+        ============================================================
+        */
+
+        function updateBars() {
+
+            const data =
+                aggregateData(currentData);
+
+
+            /*
+            CASES
+            */
+
+            const topCases =
+                data
+                    .sort(function(a, b) {
+                        return b.cases - a.cases;
+                    })
+                    .slice(0, 10);
+
+
+            drawBarChart(
+                "#barDiv",
+                topCases,
+                "cases"
+            );
+
+
+            /*
+            DEATHS
+            */
+
+            const topDeaths =
+                data
+                    .sort(function(a, b) {
+                        return b.deaths - a.deaths;
+                    })
+                    .slice(0, 10);
+
+
+            drawBarChart(
+                "#barTwoDiv",
+                topDeaths,
+                "deaths"
+            );
+
+        }
+
+
+        /*
+        ============================================================
+        DRAW BAR CHART
+        ============================================================
+        */
+
+        function drawBarChart(
+            selector,
+            data,
+            valueName
+        ) {
+
+            const div =
+                document.querySelector(selector);
+
+
+            const width =
+                div.clientWidth;
+
+
+            const height =
+                div.clientHeight;
+
+
+            const margin = {
+
+                top: 10,
+
+                right: 20,
+
+                bottom: 50,
+
+                left: 100
+
+            };
+
+
+            const svg =
+                d3.select(selector)
+                    .select("svg");
+
+
+            const x =
+                d3.scaleLinear()
+                    .domain([
+                        0,
+                        d3.max(
+                            data,
+                            function(d) {
+                                return d[valueName];
+                            }
+                        ) || 1
+                    ])
+                    .range([
+                        margin.left,
+                        width - margin.right
+                    ]);
+
+
+            const y =
+                d3.scaleBand()
+                    .domain(
+                        data.map(function(d) {
+                            return d.state;
+                        })
+                    )
+                    .range([
+                        margin.top,
+                        height - margin.bottom
+                    ])
+                    .padding(0.2);
+
+
+            const bars =
+                svg.select(".bars");
+
+
+            bars.selectAll("rect")
+
+                .data(
+                    data,
+                    function(d) {
+                        return d.state;
+                    }
+                )
+
+                .join("rect")
+
+                .attr("class", "bar")
+
+                .attr(
+                    "x",
+                    x(0)
+                )
+
+                .attr(
+                    "y",
+                    function(d) {
+                        return y(d.state);
+                    }
+                )
+
+                .attr(
+                    "width",
+                    function(d) {
+                        return x(d[valueName]) - x(0);
+                    }
+                )
+
+                .attr(
+                    "height",
+                    y.bandwidth()
+                )
+
+                .attr(
+                    "fill",
+                    function(d) {
+
+                        if (
+                            selectedState === d.state
+                        ) {
+
+                            return "#ff7f0e";
+
+                        }
+
+                        return "#4c78a8";
+
+                    }
+                )
+
+                .on("mouseover", function(event, d) {
+
+                    const tooltip =
+                        d3.select("#tooltip");
+
+
+                    tooltip
+
+                        .style("display", "block")
+
+                        .style(
+                            "left",
+                            (event.pageX + 10) + "px"
+                        )
+
+                        .style(
+                            "top",
+                            (event.pageY + 10) + "px"
+                        )
+
+                        .html(
+
+                            "<strong>" +
+                            stateNames[d.state] +
+                            "</strong><br>" +
+
+                            valueName +
+                            ": " +
+                            d3.format(",")(
+                                d[valueName]
+                            )
+
+                        );
+
+                })
+
+                .on("mouseout", function() {
+
+                    d3.select("#tooltip")
+                        .style("display", "none");
+
+                })
+
+                .on("click", function(event, d) {
+
+                    selectedState =
+                        d.state;
+
+                    updateAll();
+
+                });
+
+
+            svg.select(".x-axis")
+
+                .attr(
+                    "transform",
+                    "translate(0," +
+                    (height - margin.bottom) +
+                    ")"
+                )
+
+                .call(
+                    d3.axisBottom(x)
+                        .ticks(5)
+                        .tickFormat(
+                            d3.format(".2s")
+                        )
+                );
+
+
+            svg.select(".y-axis")
+
+                .attr(
+                    "transform",
+                    "translate(" +
+                    margin.left +
+                    ",0)"
+                )
+
+                .call(
+                    d3.axisLeft(y)
+                );
+
+        }
+
+
+        /*
+        ============================================================
+        CREATE TIMELINE / BRUSH
+        ============================================================
+        */
+
+        function createTimeline() {
+
+            const div =
+                document.getElementById("brushDiv");
+
+
+            const width =
+                div.clientWidth;
+
+
+            const height =
+                div.clientHeight;
+
+
+            const margin = {
+
+                top: 20,
+
+                right: 30,
+
+                bottom: 40,
+
+                left: 50
+
+            };
+
+
+            const svg =
+                d3.select("#brushDiv")
+                    .append("svg")
+                    .attr("width", width)
+                    .attr("height", height);
+
+
+            const dates =
+                covidData
+                    .map(function(d) {
+                        return d.submission_date;
+                    })
+                    .filter(function(d) {
+                        return d !== null;
+                    });
+
+
+            const x =
+                d3.scaleTime()
+                    .domain([
+                        d3.min(dates),
+                        d3.max(dates)
+                    ])
+                    .range([
+                        margin.left,
+                        width - margin.right
+                    ]);
+
+
+            const totals =
+                d3.rollup(
+
+                    covidData,
+
+                    function(values) {
+
+                        return d3.sum(
+                            values,
+                            function(d) {
+                                return d.new_case;
+                            }
+                        );
+
+                    },
+
+                    function(d) {
+                        return d.submission_date;
+                    }
+
+                );
+
+
+            const timelineData =
+                Array.from(
+                    totals,
+                    function(entry) {
+
+                        return {
+
+                            date: entry[0],
+
+                            cases: entry[1]
+
+                        };
+
+                    }
+                );
+
+
+            const y =
+                d3.scaleLinear()
+                    .domain([
+                        0,
+                        d3.max(
+                            timelineData,
+                            function(d) {
+                                return d.cases;
+                            }
+                        ) || 1
+                    ])
+                    .range([
+                        height - margin.bottom,
+                        margin.top
+                    ]);
+
+
+            const line =
+                d3.line()
+                    .x(function(d) {
+                        return x(d.date);
+                    })
+                    .y(function(d) {
+                        return y(d.cases);
+                    });
+
+
+            svg.append("path")
+
+                .datum(timelineData)
+
+                .attr(
+                    "fill",
+                    "none"
+                )
+
+                .attr(
+                    "stroke",
+                    "#4c78a8"
+                )
+
+                .attr(
+                    "stroke-width",
+                    2
+                )
+
+                .attr(
+                    "d",
+                    line
+                );
+
+
+            const brush =
+                d3.brushX()
+
+                    .extent([
+
+                        [
+                            margin.left,
+                            margin.top
+                        ],
+
+                        [
+                            width - margin.right,
+                            height - margin.bottom
+                        ]
+
+                    ])
+
+                    .on(
+                        "end",
+                        function(event) {
+
+                            if (!event.selection) {
+
+                                return;
+
+                            }
+
+
+                            const selected =
+                                event.selection;
+
+
+                            startDate =
+                                x.invert(
+                                    selected[0]
+                                );
+
+
+                            endDate =
+                                x.invert(
+                                    selected[1]
+                                );
+
+
+                            filterData();
+
+                        }
+                    );
+
+
+            svg.append("g")
+
+                .attr(
+                    "class",
+                    "brush"
+                )
+
+                .call(brush);
+
+
+            svg.append("g")
+
+                .attr(
+                    "transform",
+                    "translate(0," +
+                    (height - margin.bottom) +
+                    ")"
+                )
+
+                .call(
+                    d3.axisBottom(x)
+                );
+
+        }
+
+
+        /*
+        ============================================================
+        FILTER DATA USING DATE RANGE
+        ============================================================
+        */
+
+        function filterData() {
+
+            currentData =
+                covidData.filter(function(d) {
+
+                    if (!d.submission_date) {
+
+                        return false;
+
+                    }
+
+
+                    return (
+                        d.submission_date >= startDate &&
+                        d.submission_date <= endDate
+                    );
+
+                });
+
+
+            updateAll();
+
+        }
+
+
+        /*
+        ============================================================
+        CREATE TABLE
+        ============================================================
+        */
+
+        function createTable() {
+
+            const tableDiv =
+                document.getElementById("tableDiv");
+
+
+            tableDiv.innerHTML = "";
+
+
+            const title =
+                document.createElement("h3");
+
+
+            title.textContent =
+                "COVID-19 State Data";
+
+
+            tableDiv.appendChild(title);
+
+
+            const table =
+                document.createElement("table");
+
+
+            const thead =
+                document.createElement("thead");
+
+
+            const headerRow =
+                document.createElement("tr");
+
+
+            const headers = [
+
+                "State",
+
+                "Cases",
+
+                "Deaths",
+
+                "Population"
+
+            ];
+
+
+            headers.forEach(function(header) {
+
+                const th =
+                    document.createElement("th");
+
+
+                th.textContent =
+                    header;
+
+
+                headerRow.appendChild(th);
+
+            });
+
+
+            thead.appendChild(headerRow);
+
+
+            table.appendChild(thead);
+
+
+            table.appendChild(
+                document.createElement("tbody")
+            );
+
+
+            tableDiv.appendChild(table);
+
+        }
+
+
+        /*
+        ============================================================
+        UPDATE TABLE
+        ============================================================
+        */
+
+        function updateTable() {
+
+            const data =
+                aggregateData(currentData);
+
+
+            const tbody =
+                d3.select("#tableDiv tbody");
+
+
+            tbody.selectAll("tr")
+
+                .data(
+                    data.sort(function(a, b) {
+
+                        return b.cases - a.cases;
+
+                    })
+                )
+
+                .join("tr")
+
+                .html(function(d) {
+
+                    return (
+
+                        "<td>" +
+                        (stateNames[d.state] ||
+                        d.state) +
+                        "</td>" +
+
+                        "<td>" +
+                        d3.format(",")(d.cases) +
+                        "</td>" +
+
+                        "<td>" +
+                        d3.format(",")(d.deaths) +
+                        "</td>" +
+
+                        "<td>" +
+                        d3.format(",")(
+                            getPopulation(d.state)
+                        ) +
+                        "</td>"
+
+                    );
+
+                });
+
+        }
+
+
+        /*
+        ============================================================
+        UPDATE MAP
+        ============================================================
+        */
+
+        function updateMap() {
+
+            const data =
+                aggregateData(currentData);
+
+
+            const values =
+                data.map(function(d) {
+                    return d.cases;
+                });
+
+
+            const maxCases =
+                d3.max(values) || 1;
+
+
+            const colorScale =
+                d3.scaleSequential(
+                    d3.interpolateBlues
+                )
+
+                .domain([
+                    0,
+                    maxCases
+                ]);
+
+
+            const lookup = new Map();
+
+
+            data.forEach(function(d) {
+
+                lookup.set(
+                    d.state,
+                    d
+                );
+
+            });
+
+
+            d3.selectAll(".state")
+
+                .attr("fill", function(d) {
+
+                    const abbreviation =
+                        fipsToAbbreviation[
+                            String(d.id).padStart(2, "0")
+                        ];
+
+
+                    const state =
+                        lookup.get(abbreviation);
+
+
+                    if (!state) {
+
+                        return "#ddd";
+
+                    }
+
+
+                    return colorScale(
+                        state.cases
+                    );
+
+                })
+
+                .classed(
+                    "selected",
+                    function(d) {
+
+                        const abbreviation =
+                            fipsToAbbreviation[
+                                String(d.id)
+                                    .padStart(2, "0")
+                            ];
+
+
+                        return (
+                            abbreviation ===
+                            selectedState
+                        );
+
+                    }
+                );
+
+        }
+
+
+        /*
+        ============================================================
+        UPDATE EVERYTHING
+        ============================================================
+        */
+
+        function updateAll() {
+
+            updateMap();
+
+            updateBars();
+
+            updateTable();
+
+        }
+
+
+        /*
+        ============================================================
+        TABLE BUTTON
+        ============================================================
+        */
+
+        document
+            .getElementById("tableButton")
+            .addEventListener(
+                "click",
+                function() {
+
+                    const map =
+                        document.getElementById("mapDiv");
+
+
+                    const table =
+                        document.getElementById("tableDiv");
+
+
+                    if (
+                        table.style.display === "none"
+                    ) {
+
+                        map.style.display =
+                            "none";
+
+                        table.style.display =
+                            "block";
+
+                        this.textContent =
+                            "Switch to Map";
+
+                    }
+
+                    else {
+
+                        map.style.display =
+                            "block";
+
+                        table.style.display =
+                            "none";
+
+                        this.textContent =
+                            "Switch to Table";
+
+                    }
+
+                }
+            );
+
+
+        /*
+        ============================================================
+        RESET BUTTON
+        ============================================================
+        */
+
+        document
+            .getElementById("resetButton")
+            .addEventListener(
+                "click",
+                function() {
+
+                    selectedState = null;
+
+                    currentData =
+                        covidData;
+
+                    const dates =
+                        covidData
+                            .map(function(d) {
+                                return d.submission_date;
+                            })
+                            .filter(function(d) {
+                                return d !== null;
+                            });
+
+
+                    startDate =
+                        d3.min(dates);
+
+
+                    endDate =
+                        d3.max(dates);
+
+
+                    updateAll();
+
+                }
+            );
+
+    </script>
+
+</body>
+</html>
